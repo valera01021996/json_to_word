@@ -165,18 +165,23 @@ def make_paragraph(text, bold=False, compact=False):
 
 def insert_text_before_tables(doc, body_text, attachments):
     body = doc.element.body
-    first_table = body.find(qn("w:tbl"))
-    if first_table is None:
+    all_tables = body.findall(qn("w:tbl"))
+    if not all_tables:
         return
 
-    # Удалить пустые параграфы перед первой таблицей
+    # Вставляем перед таблицей с данными (вторая если есть шапка, иначе первая)
+    data_table = all_tables[1] if len(all_tables) > 1 else all_tables[0]
+
+    # Удалить пустые параграфы между шапкой и таблицей данных
     children = list(body)
-    idx = children.index(first_table)
-    for child in children[:idx]:
+    idx = children.index(data_table)
+    first_table = all_tables[0]
+    first_table_idx = children.index(first_table)
+    for child in children[first_table_idx + 1:idx]:
         if child.tag == qn("w:p") and child.find(".//" + qn("w:t")) is None:
             body.remove(child)
     # Пересчитать idx после удаления
-    idx = list(body).index(first_table)
+    idx = list(body).index(data_table)
     inserts = []
 
     if body_text:
@@ -232,17 +237,12 @@ def process_json(json_file):
 
     tables = doc.tables
 
-    # Таблица 1: Test1, Test2, Test3, Test4
-    fill_table_cell(tables[0], "Время начала:", data["start_time"])
-    fill_table_cell(tables[0], "Время окончания:", data["stop_time"])
-    fill_table_cell(tables[0], "Отправитель:", data["sender"])
-    fill_table_cell(tables[0], "Получатель:", data["receiver"])
-
-    # Таблица 2: Test5, Test6, Test7, Test8
-    fill_table_cell(tables[1], "Бошланган вакт:", data["start_time"])
-    fill_table_cell(tables[1], "Тугатилган вакт", data["stop_time"])
-    fill_table_cell(tables[1], "Жунатувчи:", data["sender"])
-    fill_table_cell(tables[1], "Кабул килувчи:", data["receiver"])
+    # Таблица с данными (вторая в шаблоне)
+    data_table = tables[1] if len(tables) > 1 else tables[0]
+    fill_table_cell(data_table, "Время начала:", data["start_time"])
+    fill_table_cell(data_table, "Время окончания:", data["stop_time"])
+    fill_table_cell(data_table, "Отправитель:", data["sender"])
+    fill_table_cell(data_table, "Получатель:", data["receiver"])
 
     insert_text_before_tables(doc, body_text, attachments)
 
