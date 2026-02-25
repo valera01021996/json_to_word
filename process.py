@@ -169,6 +169,13 @@ def insert_text_before_tables(doc, body_text, attachments):
     if first_table is None:
         return
 
+    # Удалить пустые параграфы перед первой таблицей
+    children = list(body)
+    idx = children.index(first_table)
+    for child in children[:idx]:
+        if child.tag == qn("w:p") and child.find(".//" + qn("w:t")) is None:
+            body.remove(child)
+    # Пересчитать idx после удаления
     idx = list(body).index(first_table)
     inserts = []
 
