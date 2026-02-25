@@ -93,10 +93,12 @@ def watcher_thread():
             filepath    = Path(parent_path) / event.name
             event_flags = flags.from_mask(event.mask)
 
-            # Новая директория — добавить watch чтобы видеть файлы внутри
+            # Новая директория — обходим всё дерево целиком, потому что
+            # поддиректории могут уже существовать к моменту получения события
             if flags.CREATE in event_flags and flags.ISDIR in event_flags:
-                add_watch(str(filepath))
-                logging.info(f"New dir, added watch: {filepath}")
+                for dirpath, _, _ in os.walk(str(filepath)):
+                    add_watch(dirpath)
+                logging.info(f"New dir tree, added watches: {filepath}")
 
             # Новый .json файл — обработать только если лежит в TARGET_DIR
             elif (flags.CLOSE_WRITE in event_flags
