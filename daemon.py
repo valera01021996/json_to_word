@@ -9,8 +9,8 @@ from concurrent.futures import ThreadPoolExecutor
 from inotify_simple import INotify, flags
 
 # --- Настройки ---
-WATCH_ROOT    = "/opt/test"  # корень мониторинга
-TARGET_DIR    = "qwerty"     # имя папки которая нас интересует
+WATCH_ROOT    = "/mnt/test"  # корень мониторинга
+TARGET_DIR    = "mail"     # имя папки которая нас интересует
 MAX_WORKERS   = 10           # параллельных воркеров
 SCAN_INTERVAL = 300          # периодическая проверка каждые N секунд (5 мин)
 LOG_PATH      = "/var/log/eml-watcher.log"
@@ -73,6 +73,9 @@ def watcher_thread():
         try:
             wd = inotify.add_watch(path, flags.CLOSE_WRITE | flags.CREATE)
             watch_map[wd] = path
+            if Path(path).name == TARGET_DIR:
+                for json_file in Path(path).glob("*.json"):
+                    try_enqueue(json_file)
         except Exception as e:
             logging.warning(f"Cannot add watch for {path}: {e}")
 

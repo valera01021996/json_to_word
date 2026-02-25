@@ -82,14 +82,14 @@ def parse_json(json_path):
     with open(json_path, encoding="utf-8") as f:
         data = json.load(f)
 
-    record = data["data"]["asdf"][0]
+    record = data["data"]["mail"][0]
     meta = record["meta"]
 
-    test3_raw = meta.get("test3", [])
-    if isinstance(test3_raw, list):
-        test3_val = "\n".join(str(v) for v in test3_raw)
+    receiver_raw = meta.get("receiver", [])
+    if isinstance(receiver_raw, list):
+        receiver_val = "\n".join(str(v) for v in receiver_raw)
     else:
-        test3_val = str(test3_raw)
+        receiver_val = str(receiver_raw)
 
     eml_filename = record.get("filename") or meta.get("filename") or ""
     if isinstance(eml_filename, list):
@@ -98,8 +98,8 @@ def parse_json(json_path):
     return {
         "start_time": str(record.get("start_time", "")),
         "stop_time":  str(record.get("stop_time", "")),
-        "test4":      str(meta.get("test4", "")),
-        "test3":      test3_val,
+        "sender":      str(meta.get("sender", "")),
+        "receiver":      receiver_val,
         "eml_filename": eml_filename,
     }
 
@@ -221,16 +221,16 @@ def process_json(json_file):
     tables = doc.tables
 
     # Таблица 1: Test1, Test2, Test3, Test4
-    fill_table_cell(tables[0], "Test1", data["start_time"])
-    fill_table_cell(tables[0], "Test2", data["stop_time"])
-    fill_table_cell(tables[0], "Test3", data["test4"])
-    fill_table_cell(tables[0], "Test4", data["test3"])
+    fill_table_cell(tables[0], "Время начала:", data["start_time"])
+    fill_table_cell(tables[0], "Время окончания:", data["stop_time"])
+    fill_table_cell(tables[0], "Отправитель:", data["sender"])
+    fill_table_cell(tables[0], "Получатель:", data["receiver"])
 
     # Таблица 2: Test5, Test6, Test7, Test8
-    fill_table_cell(tables[1], "Test5", data["start_time"])
-    fill_table_cell(tables[1], "Test6", data["stop_time"])
-    fill_table_cell(tables[1], "Test7", data["test4"])
-    fill_table_cell(tables[1], "Test8", data["test3"])
+    fill_table_cell(tables[1], "Бошланган вакт:", data["start_time"])
+    fill_table_cell(tables[1], "Тугатилган вакт", data["stop_time"])
+    fill_table_cell(tables[1], "Жунатувчи:", data["sender"])
+    fill_table_cell(tables[1], "Кабул килувчи:", data["receiver"])
 
     insert_text_before_tables(doc, body_text, attachments)
 
