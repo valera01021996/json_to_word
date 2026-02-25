@@ -140,8 +140,15 @@ def fill_table_cell(table, label, value):
                 return
 
 
-def make_paragraph(text, bold=False):
+def make_paragraph(text, bold=False, compact=False):
     p = OxmlElement("w:p")
+    if compact:
+        pPr = OxmlElement("w:pPr")
+        spacing = OxmlElement("w:spacing")
+        spacing.set(qn("w:before"), "0")
+        spacing.set(qn("w:after"), "0")
+        pPr.append(spacing)
+        p.append(pPr)
     if text:
         r = OxmlElement("w:r")
         if bold:
@@ -174,7 +181,7 @@ def insert_text_before_tables(doc, body_text, attachments):
     if attachments:
         inserts.append(make_paragraph("Вложения:", bold=True))
         for name, size in attachments:
-            inserts.append(make_paragraph(f"- {name} | {size} байт ({human_size(size)})"))
+            inserts.append(make_paragraph(f"- {name} {size} байт", compact=True))
         inserts.append(make_paragraph(""))
 
     for para in reversed(inserts):
