@@ -173,16 +173,17 @@ def insert_text_before_tables(doc, body_text, attachments):
     inserts = []
 
     if body_text:
-        inserts.append(make_paragraph("Текст сообщения:", bold=True))
+        inserts.append(make_paragraph("Текст сообщения:", bold=True, compact=True))
         for line in body_text.split("\n"):
-            inserts.append(make_paragraph(line))
-        inserts.append(make_paragraph(""))
+            inserts.append(make_paragraph(line, compact=True))
 
     if attachments:
-        inserts.append(make_paragraph("Вложения:", bold=True))
+        inserts.append(make_paragraph("Вложения:", bold=True, compact=True))
         for name, size in attachments:
             inserts.append(make_paragraph(f"- {name} {size} байт", compact=True))
-        inserts.append(make_paragraph(""))
+
+    if inserts:
+        inserts.append(make_paragraph("", compact=True))  # одна пустая строка перед таблицами
 
     for para in reversed(inserts):
         body.insert(idx, para)
