@@ -182,9 +182,6 @@ def insert_text_before_tables(doc, body_text, attachments):
         for name, size in attachments:
             inserts.append(make_paragraph(f"- {name} {size} байт", compact=True))
 
-    if inserts:
-        inserts.append(make_paragraph("", compact=True))  # одна пустая строка перед таблицами
-
     for para in reversed(inserts):
         body.insert(idx, para)
 
