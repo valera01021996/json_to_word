@@ -96,11 +96,12 @@ def parse_json(json_path):
         eml_filename = eml_filename[0] if eml_filename else ""
 
     return {
-        "start_time": str(record.get("start_time", "")),
-        "stop_time":  str(record.get("stop_time", "")),
-        "sender":      str(meta.get("sender", "")),
-        "receiver":      receiver_val,
+        "start_time":   str(record.get("start_time", "")),
+        "stop_time":    str(record.get("stop_time", "")),
+        "sender":       str(meta.get("sender", "")),
+        "receiver":     receiver_val,
         "eml_filename": eml_filename,
+        "order_code":   str(record.get("order_code", "")).strip(),
     }
 
 
@@ -113,17 +114,40 @@ def clear_cell(cell):
 
 
 def replace_cell_text(cell, new_text):
+    import copy
     lines = str(new_text).split("\n")
     clear_cell(cell)
     first_para = cell.paragraphs[0]
+
+    # Сохранить rPr первого рана для единообразного шрифта во всех строках
+    rPr_template = None
     if first_para.runs:
+        existing_rPr = first_para.runs[0]._element.find(qn("w:rPr"))
+        if existing_rPr is not None:
+            rPr_template = copy.deepcopy(existing_rPr)
         first_para.runs[0].text = lines[0]
     else:
         first_para.add_run(lines[0])
+
     for line in lines[1:]:
         new_para = OxmlElement("w:p")
+        # Убрать отступы между строками
+        pPr = OxmlElement("w:pPr")
+        spacing = OxmlElement("w:spacing")
+        spacing.set(qn("w:before"), "0")
+        spacing.set(qn("w:after"), "0")
+        pPr.append(spacing)
+        new_para.append(pPr)
+        # Ран с тем же форматированием что и первая строка
+        r = OxmlElement("w:r")
+        if rPr_template is not None:
+            r.append(copy.deepcopy(rPr_template))
+        t = OxmlElement("w:t")
+        t.text = line
+        t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+        r.append(t)
+        new_para.append(r)
         cell._element.append(new_para)
-        cell.paragraphs[-1].add_run(line)
 
 
 def fill_table_cell(table, label, value):
@@ -138,6 +162,62 @@ def fill_table_cell(table, label, value):
             if cell.text.strip() == label and i + 1 < len(unique_cells):
                 replace_cell_text(unique_cells[i + 1], value)
                 return
+
+
+def fill_attachments_cell(table, order_code, attachments):
+    """Найти ячейку с 'test', вставить вложения сверху, фиксированный текст не трогать."""
+    import copy
+    prefix = order_code if order_code else "нет"
+    lines = [f"{prefix} {name} qwerty {size} байт" for name, size in attachments] if attachments else [prefix]
+
+    for row in table.rows:
+        seen = set()
+        for cell in row.cells:
+            if id(cell) in seen:
+                continue
+            seen.add(id(cell))
+            if "test" not in cell.text:
+                continue
+
+            # Сохранить rPr из placeholder-рана для единообразного шрифта
+            rPr_template = None
+            for para in cell.paragraphs:
+                for run in para.runs:
+                    if run.text.strip() == "test":
+                        existing_rPr = run._element.find(qn("w:rPr"))
+                        if existing_rPr is not None and rPr_template is None:
+                            rPr_template = copy.deepcopy(existing_rPr)
+
+            # Удалить только placeholder-раны "test", фиксированный текст оставить
+            for para in list(cell.paragraphs):
+                for run in list(para.runs):
+                    if run.text.strip() == "test":
+                        run._element.getparent().remove(run._element)
+                # Удалить параграф если стал пустым (но не единственный)
+                if not para._element.findall(".//" + qn("w:t")) and len(cell.paragraphs) > 1:
+                    para._element.getparent().remove(para._element)
+
+            # Вставить строки вложений в начало ячейки
+            first_para = cell.paragraphs[0]
+            insert_idx = list(cell._element).index(first_para._element)
+            for line in reversed(lines):
+                new_para = OxmlElement("w:p")
+                pPr = OxmlElement("w:pPr")
+                spacing = OxmlElement("w:spacing")
+                spacing.set(qn("w:before"), "0")
+                spacing.set(qn("w:after"), "0")
+                pPr.append(spacing)
+                new_para.append(pPr)
+                r = OxmlElement("w:r")
+                if rPr_template is not None:
+                    r.append(copy.deepcopy(rPr_template))
+                t = OxmlElement("w:t")
+                t.text = line
+                t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+                r.append(t)
+                new_para.append(r)
+                cell._element.insert(insert_idx, new_para)
+            return
 
 
 def make_paragraph(text, bold=False, compact=False):
@@ -163,36 +243,34 @@ def make_paragraph(text, bold=False, compact=False):
     return p
 
 
-def insert_text_before_tables(doc, body_text, attachments):
+def insert_text_after_table(doc, body_text):
+    """Вставить текст сообщения сразу после таблицы с данными."""
+    if not body_text:
+        return
+
     body = doc.element.body
     all_tables = body.findall(qn("w:tbl"))
     if not all_tables:
         return
 
-    # Вставляем перед таблицей с данными (вторая если есть шапка, иначе первая)
     data_table = all_tables[1] if len(all_tables) > 1 else all_tables[0]
-
-    # Удалить пустые параграфы между шапкой и таблицей данных
     children = list(body)
     idx = children.index(data_table)
-    first_table = all_tables[0]
-    first_table_idx = children.index(first_table)
-    for child in children[first_table_idx + 1:idx]:
+
+    # Удалить пустые параграфы сразу после таблицы данных
+    for child in children[idx + 1:]:
         if child.tag == qn("w:p") and child.find(".//" + qn("w:t")) is None:
             body.remove(child)
-    # Пересчитать idx после удаления
-    idx = list(body).index(data_table)
-    inserts = []
+        else:
+            break
 
-    if body_text:
-        inserts.append(make_paragraph("Текст сообщения:", bold=True, compact=True))
-        for line in body_text.split("\n"):
-            inserts.append(make_paragraph(line, compact=True))
+    # Позиция вставки — сразу после таблицы данных
+    idx = list(body).index(data_table) + 1
 
-    if attachments:
-        inserts.append(make_paragraph("Вложения:", bold=True, compact=True))
-        for name, size in attachments:
-            inserts.append(make_paragraph(f"- {name} {size} байт", compact=True))
+    # Небольшой отступ после таблицы
+    inserts = [make_paragraph("", compact=False)]
+    for line in body_text.split("\n"):
+        inserts.append(make_paragraph(line, compact=True))
 
     for para in reversed(inserts):
         body.insert(idx, para)
@@ -236,15 +314,20 @@ def process_json(json_file):
         return
 
     tables = doc.tables
-
-    # Таблица с данными (вторая в шаблоне)
+    header_table = tables[0]
     data_table = tables[1] if len(tables) > 1 else tables[0]
-    fill_table_cell(data_table, "Время начала:", data["start_time"])
-    fill_table_cell(data_table, "Время окончания:", data["stop_time"])
-    fill_table_cell(data_table, "Отправитель:", data["sender"])
-    fill_table_cell(data_table, "Получатель:", data["receiver"])
 
-    insert_text_before_tables(doc, body_text, attachments)
+    # Таблица 0 (шапка): ячейка "test" — вложения из EML
+    fill_attachments_cell(header_table, data["order_code"], attachments)
+
+    # Таблица 1 (данные): время, отправитель, получатель
+    fill_table_cell(data_table, "Бошланиш вақти:", data["start_time"])
+    fill_table_cell(data_table, "Тугаш вақти:", data["stop_time"])
+    fill_table_cell(data_table, "Ким:", data["sender"])
+    fill_table_cell(data_table, "Кимга:", data["receiver"])
+
+    # Текст сообщения — под таблицей данных
+    insert_text_after_table(doc, body_text)
 
     output_path = watch_dir / (json_path.stem + ".docx")
     tmp_path = output_path.with_suffix(".tmp")
