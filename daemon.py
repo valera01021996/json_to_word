@@ -2,6 +2,7 @@ import os
 import signal
 import time
 import logging
+import logging.handlers
 import threading
 import queue
 from pathlib import Path
@@ -9,24 +10,29 @@ from concurrent.futures import ThreadPoolExecutor
 from inotify_simple import INotify, flags
 
 # --- Настройки ---
-WATCH_ROOT    = "/mnt/test"  # корень мониторинга
-TARGET_DIR    = "mail"     # имя папки которая нас интересует
-MAX_WORKERS   = 10           # параллельных воркеров
+WATCH_ROOT = "/mnt/test"  # корень мониторинга
+TARGET_DIR = "mail"     # имя папки которая нас интересует
+MAX_WORKERS = 10           # параллельных воркеров
 SCAN_INTERVAL = 300          # периодическая проверка каждые N секунд (5 мин)
-LOG_PATH      = "/var/log/eml-watcher.log"
+LOG_PATH = "/var/log/eml-watcher.log"
+LOG_MAX_BYTES = 10 * 1024 * 1024  # 10 MB на файл
+LOG_BACKUP_COUNT = 5              # хранить 5 файлов (итого до 50 MB)
 
-logging.basicConfig(
-    filename=LOG_PATH,
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s"
+_handler = logging.handlers.RotatingFileHandler(
+    LOG_PATH,
+    maxBytes=LOG_MAX_BYTES,
+    backupCount=LOG_BACKUP_COUNT,
+    encoding="utf-8",
 )
+_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+logging.basicConfig(level=logging.INFO, handlers=[_handler])
 
 # Импортируем после настройки логгера
 from process import process_json
 
 # --- Состояние ---
-task_queue     = queue.Queue()
-in_flight      = set()
+task_queue = queue.Queue()
+in_flight = set()
 in_flight_lock = threading.Lock()
 shutdown_event = threading.Event()
 
