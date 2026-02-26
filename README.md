@@ -18,9 +18,9 @@
 
 Файлы которые обрабатываются:
 ```
-/opt/test/
+/mnt/test/
 └── 2026/02/25/08/
-    ├── qwerty/          ← смотрим только сюда
+    ├── mail/            ← смотрим только сюда
     │   ├── abc.json
     │   ├── abc.eml
     │   └── abc.docx     ← результат
@@ -77,25 +77,32 @@
 abc.json
    │
    ├─ parse_json()
-   │   ├── start_time  → таблица1/Test1, таблица2/Test5
-   │   ├── stop_time   → таблица1/Test2, таблица2/Test6
-   │   ├── test4       → таблица1/Test3, таблица2/Test7
-   │   ├── test3       → таблица1/Test4, таблица2/Test8
-   │   └── filename    → имя .eml файла
+   │   ├── start_time   → Таблица 1: Бошланиш вақти
+   │   ├── stop_time    → Таблица 1: Тугаш вақти
+   │   ├── sender       → Таблица 1: Ким
+   │   ├── receiver     → Таблица 1: Кимга
+   │   ├── order_code   → Таблица 0: префикс перед каждым вложением
+   │   ├── user_id      → Таблица 3: Бажарувчи
+   │   └── filename     → имя .eml файла
    │
    ├─ parse_eml()  (если .eml найден)
    │   ├── текст письма (text/plain → text/html)
-   │   └── вложения: имя + размер
+   │   └── вложения: имя + размер в байтах
    │
    └─ fill_document()
-       ├── вставить текст и вложения над таблицами
-       ├── заполнить таблицу 1
-       ├── заполнить таблицу 2
-       └── сохранить abc.docx
+       ├── Таблица 0 (шапка)
+       │   └── вложения: "{order_code} {имя} qwerty {размер} байт"
+       │       если вложений нет — ячейки очищаются
+       ├── Таблица 1 (данные)
+       │   └── время начала/окончания, отправитель, получатель
+       ├── Таблица 3 (подпись)
+       │   └── Бажарувчи: {user_id}
+       ├── текст письма — под таблицей 1
+       └── сохранить abc.docx (атомарно через .tmp)
 ```
 
 **Ожидание EML файла:**
-Если `.eml` ещё не появился в директории — скрипт ждёт до 60 секунд
+Если `.eml` ещё не появился — скрипт ждёт до 60 секунд
 (проверяя каждые 2 секунды). Если не дождался — генерирует `.docx`
 без текста письма и логирует предупреждение.
 
@@ -114,16 +121,19 @@ abc.json
 
 | Параметр | По умолчанию | Описание |
 |---|---|---|
-| `WATCH_ROOT` | `/opt/test` | Корень дерева директорий для мониторинга |
-| `TARGET_DIR` | `qwerty` | Имя папки из которой брать файлы |
+| `WATCH_ROOT` | `/mnt/test` | Корень дерева директорий для мониторинга |
+| `TARGET_DIR` | `mail` | Имя папки из которой брать файлы |
 | `MAX_WORKERS` | `10` | Параллельных обработчиков |
 | `SCAN_INTERVAL` | `300` | Интервал периодической проверки (сек) |
 | `LOG_PATH` | `/var/log/eml-watcher.log` | Путь к лог файлу |
+| `LOG_MAX_BYTES` | `10 MB` | Максимальный размер одного лог файла |
+| `LOG_BACKUP_COUNT` | `5` | Количество хранимых лог файлов (итого до 50 MB) |
 
 ## Настройки (process.py)
 
 | Параметр | По умолчанию | Описание |
 |---|---|---|
+| `TEMPLATE_PATH` | `template.docx` рядом со скриптом | Путь к шаблону Word |
 | `EML_WAIT_TIMEOUT` | `60` | Максимум секунд ожидания EML файла |
 | `EML_WAIT_INTERVAL` | `2` | Как часто проверять наличие EML (сек) |
 
@@ -135,11 +145,21 @@ abc.json
 
 ```bash
 cd /opt/word
-pip3 install -r requirements.txt
-# или через venv:
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+```
+
+Если сервер без интернета — скачать пакеты на другой машине:
+```bash
+pip download -r requirements.txt -d ./packages \
+  --platform manylinux2014_x86_64 \
+  --python-version 3.11 \
+  --only-binary=:all:
+```
+Перенести папку `packages` на сервер и установить:
+```bash
+pip install --no-index --find-links ./packages -r requirements.txt
 ```
 
 ### 2. Лимит inotify watches (если дерево директорий большое)
@@ -149,7 +169,7 @@ echo fs.inotify.max_user_watches=524288 >> /etc/sysctl.conf
 sysctl -p
 ```
 
-### 4. systemd сервис
+### 3. systemd сервис
 
 ```bash
 cat > /etc/systemd/system/eml-watcher.service << 'EOF'
@@ -189,6 +209,14 @@ journalctl -u eml-watcher -f
 
 # Лог файл
 tail -f /var/log/eml-watcher.log
+
+# Сколько файлов уже обработано
+find /mnt/test -name "*.docx" | wc -l
+
+# Сколько ещё не обработано
+find /mnt/test -path "*/mail/*.json" | while read f; do
+  [ ! -f "${f%.json}.docx" ] && echo "$f"
+done | wc -l
 ```
 
 ---
@@ -197,10 +225,10 @@ tail -f /var/log/eml-watcher.log
 
 ```bash
 # Обработать один файл
-python3 process.py /path/to/file.json
+/opt/word/venv/bin/python3 /opt/word/process.py /path/to/file.json
 
 # Запустить демон в консоли (Ctrl+C для остановки)
-python3 daemon.py
+/opt/word/venv/bin/python3 /opt/word/daemon.py
 ```
 
 ---

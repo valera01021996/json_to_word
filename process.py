@@ -95,6 +95,8 @@ def parse_json(json_path):
     if isinstance(eml_filename, list):
         eml_filename = eml_filename[0] if eml_filename else ""
 
+    user = data.get("user", {})
+
     return {
         "start_time":   str(record.get("start_time", "")),
         "stop_time":    str(record.get("stop_time", "")),
@@ -102,6 +104,7 @@ def parse_json(json_path):
         "receiver":     receiver_val,
         "eml_filename": eml_filename,
         "order_code":   str(record.get("order_code", "")).strip(),
+        "user_id":      str(user.get("user_id", "")),
     }
 
 
@@ -339,6 +342,19 @@ def process_json(json_file):
     fill_table_cell(data_table, "Тугаш вақти:", data["stop_time"])
     fill_table_cell(data_table, "Ким:", data["sender"])
     fill_table_cell(data_table, "Кимга:", data["receiver"])
+
+    # Таблица 3 (маленькая): Бажарувчи — user_id
+    if len(tables) > 3:
+        for row in tables[3].rows:
+            seen = set()
+            for cell in row.cells:
+                if id(cell) in seen:
+                    continue
+                seen.add(id(cell))
+                for para in cell.paragraphs:
+                    for run in para.runs:
+                        if run.text.strip() == "user_id":
+                            run.text = data["user_id"]
 
     # Текст сообщения — под таблицей данных
     insert_text_after_table(doc, body_text)
