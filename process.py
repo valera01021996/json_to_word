@@ -168,9 +168,10 @@ def fill_attachments_cell(table, order_code, attachments):
     """Найти ячейку с 'test', вставить вложения сверху, фиксированный текст не трогать."""
     import copy
     prefix = order_code if order_code else "нет"
-    lines = [f"{prefix} {name} qwerty {size} байт" for name, size in attachments] if attachments else [prefix]
+    lines = [f"{prefix} {name} qwerty {size} байт" for name, size in attachments]
 
-    for row in table.rows:
+    rows = table.rows
+    for row_idx, row in enumerate(rows):
         seen = set()
         for cell in row.cells:
             if id(cell) in seen:
@@ -178,6 +179,19 @@ def fill_attachments_cell(table, order_code, attachments):
             seen.add(id(cell))
             if "test" not in cell.text:
                 continue
+
+            # Нет вложений — очистить эту ячейку и следующую строку
+            if not lines:
+                clear_cell(cell)
+                if row_idx + 1 < len(rows):
+                    next_row = rows[row_idx + 1]
+                    seen_next = set()
+                    for next_cell in next_row.cells:
+                        if id(next_cell) in seen_next:
+                            continue
+                        seen_next.add(id(next_cell))
+                        clear_cell(next_cell)
+                return
 
             # Сохранить rPr из placeholder-рана для единообразного шрифта
             rPr_template = None
