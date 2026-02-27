@@ -122,15 +122,23 @@ def replace_cell_text(cell, new_text):
     clear_cell(cell)
     first_para = cell.paragraphs[0]
 
-    # Сохранить rPr первого рана для единообразного шрифта во всех строках
+    # Сохранить rPr первого рана и применить Times New Roman
     rPr_template = None
     if first_para.runs:
-        existing_rPr = first_para.runs[0]._element.find(qn("w:rPr"))
-        if existing_rPr is not None:
-            rPr_template = copy.deepcopy(existing_rPr)
-        first_para.runs[0].text = lines[0]
+        run0 = first_para.runs[0]
+        existing_rPr = run0._element.find(qn("w:rPr"))
+        if existing_rPr is None:
+            existing_rPr = OxmlElement("w:rPr")
+            run0._element.insert(0, existing_rPr)
+        set_font_times(existing_rPr)
+        rPr_template = copy.deepcopy(existing_rPr)
+        run0.text = lines[0]
     else:
-        first_para.add_run(lines[0])
+        r = first_para.add_run(lines[0])
+        rPr_new = OxmlElement("w:rPr")
+        set_font_times(rPr_new)
+        r._element.insert(0, rPr_new)
+        rPr_template = copy.deepcopy(rPr_new)
 
     for line in lines[1:]:
         new_para = OxmlElement("w:p")
@@ -170,7 +178,7 @@ def fill_table_cell(table, label, value):
 def fill_attachments_cell(table, order_code, attachments):
     """Найти ячейку с 'test', вставить вложения сверху, фиксированный текст не трогать."""
     import copy
-    prefix = order_code if order_code else "нет"
+    prefix = f"({order_code.strip('()')})"
     lines = [f"{prefix} {name} qwerty {size} байт" for name, size in attachments]
 
     rows = table.rows
@@ -226,8 +234,9 @@ def fill_attachments_cell(table, order_code, attachments):
                 pPr.append(spacing)
                 new_para.append(pPr)
                 r = OxmlElement("w:r")
-                if rPr_template is not None:
-                    r.append(copy.deepcopy(rPr_template))
+                rPr = copy.deepcopy(rPr_template) if rPr_template is not None else OxmlElement("w:rPr")
+                set_font_times(rPr)
+                r.append(rPr)
                 t = OxmlElement("w:t")
                 t.text = line
                 t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
@@ -235,6 +244,18 @@ def fill_attachments_cell(table, order_code, attachments):
                 new_para.append(r)
                 cell._element.insert(insert_idx, new_para)
             return
+
+
+def set_font_times(rPr):
+    """Установить Times New Roman в rPr, удалив старый w:rFonts если есть."""
+    existing = rPr.find(qn("w:rFonts"))
+    if existing is not None:
+        rPr.remove(existing)
+    rFonts = OxmlElement("w:rFonts")
+    rFonts.set(qn("w:ascii"), "Times New Roman")
+    rFonts.set(qn("w:hAnsi"), "Times New Roman")
+    rFonts.set(qn("w:cs"), "Times New Roman")
+    rPr.insert(0, rFonts)
 
 
 def make_paragraph(text, bold=False, compact=False):
@@ -248,10 +269,11 @@ def make_paragraph(text, bold=False, compact=False):
         p.append(pPr)
     if text:
         r = OxmlElement("w:r")
+        rPr = OxmlElement("w:rPr")
+        set_font_times(rPr)
         if bold:
-            rPr = OxmlElement("w:rPr")
             rPr.append(OxmlElement("w:b"))
-            r.append(rPr)
+        r.append(rPr)
         t = OxmlElement("w:t")
         t.text = text
         t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
