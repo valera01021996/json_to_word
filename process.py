@@ -247,14 +247,21 @@ def fill_attachments_cell(table, order_code, attachments):
 
 
 def set_font_times(rPr):
-    """Установить Times New Roman в rPr, удалив старый w:rFonts если есть."""
-    existing = rPr.find(qn("w:rFonts"))
-    if existing is not None:
-        rPr.remove(existing)
+    """Установить Times New Roman 14pt в rPr, удалив старые значения если есть."""
+    for tag in ("w:rFonts", "w:sz", "w:szCs"):
+        el = rPr.find(qn(tag))
+        if el is not None:
+            rPr.remove(el)
     rFonts = OxmlElement("w:rFonts")
     rFonts.set(qn("w:ascii"), "Times New Roman")
     rFonts.set(qn("w:hAnsi"), "Times New Roman")
     rFonts.set(qn("w:cs"), "Times New Roman")
+    sz = OxmlElement("w:sz")
+    sz.set(qn("w:val"), "28")       # 14pt × 2 = 28 полупунктов
+    szCs = OxmlElement("w:szCs")
+    szCs.set(qn("w:val"), "28")     # для кириллицы
+    rPr.insert(0, szCs)
+    rPr.insert(0, sz)
     rPr.insert(0, rFonts)
 
 
